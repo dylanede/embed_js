@@ -62,7 +62,17 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
                     let mut args = Vec::new();
                     {
                         let mut iter = tts.iter().peekable();
+                        let mut start = true;
                         loop {
+                            if start {
+                                start = false;
+                            } else {
+                                match iter.next() {
+                                    Some(&TokenTree::Token(Token::Comma, _)) => {},
+                                    None => break,
+                                    _ => return Err(()),
+                                }
+                            }
                             let name = match iter.next() {
                                 Some(&TokenTree::Token(Token::Ident(_), span)) => span,
                                 None => break,
