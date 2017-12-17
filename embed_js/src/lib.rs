@@ -94,7 +94,7 @@ macro_rules! js {
         #[derive(EmbedJsDetail)]
         #[allow(dead_code)]
         enum EmbedJsStruct {
-            Input = (stringify!($($tt)*), 0).1
+            Input = (stringify!({$($tt)*}), 0).1
         }
         EmbedJsStruct::call()
     }}
