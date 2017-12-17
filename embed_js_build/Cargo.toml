@@ -1,6 +1,6 @@
 [package]
 name = "embed_js_build"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Dylan Ede <dylanede@googlemail.com>"]
 description = """
 Minimalist lightweight inline JavaScript for Rust applications targeting WebAssembly via the `wasm32-unknown-unknown` target.
