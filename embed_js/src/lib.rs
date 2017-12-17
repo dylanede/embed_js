@@ -99,3 +99,24 @@ macro_rules! js {
         EmbedJsStruct::call()
     }}
 }
+
+/// Used to specify JavaScript that should be executed before the WebAssembly module is loaded.
+/// This is useful for specifying functions that can be shared between instances of inline JS, or
+/// set up other global state. This macro is used as a statement or at item level.
+///
+/// The order of evaluation at runtime is the same as the order of `include_js` calls in the source,
+/// with all modules inlined. The order with respect to other crates is not specified.
+///
+/// Example:
+///
+/// ```ignore
+/// include_js! {
+///     window.my_global_function = function() {
+///         alert("Hello World!");
+///     };
+/// }
+/// ```
+#[macro_export]
+macro_rules! include_js {
+    ($($tt:tt)*) => {}
+}

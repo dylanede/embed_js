@@ -51,32 +51,53 @@ pub fn preprocess_crate(lib_root: &Path) {
         .add_crate_root(lib_root) // TODO: get the true location from the Cargo.toml
         .unwrap();
     let mut instances = Vec::new();
+    let mut included_js = String::new();
     struct JsVisitor<'a, 'b: 'a> {
         source_map: &'b SourceMap,
         instances: &'a mut Vec<JsMac<'b>>,
+        included_js: &'a mut String
     }
 
     impl<'a, 'b: 'a> Visitor for JsVisitor<'a, 'b> {
         fn visit_mac(&mut self, mac: &Mac) {
-            if mac.path.segments.len() != 1 || mac.path.segments[0].ident.as_ref() != "js" {
+            if mac.path.segments.len() != 1 {
                 return;
             }
-            let tts = match mac.tts[0] {
-                TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
-                _ => return,
-            };
-            if let Ok(parsed) = embed_js_common::parse_js_mac_source_map(tts, self.source_map) {
-                self.instances.push(parsed);
+            match mac.path.segments[0].ident.as_ref() {
+                "js" => {
+                    let tts = match mac.tts[0] {
+                        TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
+                        _ => return,
+                    };
+                    if let Ok(parsed) = embed_js_common::parse_js_mac_source_map(tts, self.source_map) {
+                        self.instances.push(parsed);
+                    }
+                }
+                "include_js" => {
+                    let tts = match mac.tts[0] {
+                        TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
+                        _ => return,
+                    };
+                    let js_source = if let (Some(first), Some(last)) = (tts.first(), tts.last()) {
+                        self.source_map.source_text(first.span().extend(last.span())).unwrap()
+                    } else {
+                        ""
+                    };
+                    self.included_js.push_str(&js_source);
+                    self.included_js.push_str("\n");
+                }
+                _ => {}
             }
         }
     }
     JsVisitor {
         source_map: &source_map,
         instances: &mut instances,
+        included_js: &mut included_js
     }.visit_crate(&krate);
 
     let js_path = out_dir.join("embed_js_data.json");
-    serde_json::to_writer(BufWriter::new(File::create(&js_path).unwrap()), &instances).unwrap();
+    serde_json::to_writer(BufWriter::new(File::create(&js_path).unwrap()), &(instances, included_js)).unwrap();
     let preamble_path = out_dir.join("embed_js_preamble.rs");
     File::create(preamble_path).unwrap();
 }
@@ -89,7 +110,10 @@ pub struct PostProcessData {
     pub wasm: Vec<u8>,
     /// The javascript that should be put as the value of the `env` field in the `importObject`
     /// passed to `WebAssembly.instantiate`.
-    pub imports: String
+    pub imports: String,
+    /// All javascript specified by the `include_js` macro in linked crates. This should be run
+    /// before the WebAssembly module is loaded.
+    pub included: String
 }
 /// Call this once **after** a wasm-unknown-unknown build has completed (i.e. from a post-build
 /// script) in order to generate the javascript imports that should accompany the wasm binary.
@@ -172,10 +196,12 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
     }
     d_pieces.remove(0); // remove lib path
     let mut js_macs: HashMap<String, JsMac<'static>> = HashMap::new();
+    let mut included_js = String::new();
     for path in d_pieces {
         if path.ends_with("out/embed_js_preamble.rs") || path.ends_with("out\\embed_js_preamble.rs") {
             let data_path = PathBuf::from(path).with_file_name("embed_js_data.json");
-            let mut crate_js_macs: Vec<JsMac> = serde_json::from_reader(BufReader::new(File::open(data_path)?)).unwrap();
+            let (mut crate_js_macs, crate_included_js): (Vec<JsMac>, String) = serde_json::from_reader(BufReader::new(File::open(data_path)?)).unwrap();
+            included_js.push_str(&crate_included_js);
             for js_mac in crate_js_macs.drain(..) {
                 let mut hasher = DefaultHasher::new();
                 js_mac.hash(&mut hasher);
@@ -229,6 +255,7 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
     Ok(PostProcessData {
         wasm_path,
         wasm,
+        included: included_js,
         imports
     })
 }
