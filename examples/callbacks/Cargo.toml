@@ -1,0 +1,13 @@
+[package]
+name = "callbacks"
+version = "0.1.0"
+authors = ["Dylan Ede <dylanede@googlemail.com>"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+embed_js = "^0.1.2"
+
+[build-dependencies]
+embed_js_build = "^0.1.2"
