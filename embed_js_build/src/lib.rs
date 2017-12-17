@@ -15,7 +15,7 @@ use cpp_synmap::SourceMap;
 use cpp_syn::visit::Visitor;
 use cpp_syn::{Mac, TokenTree, Delimited};
 
-use parity_wasm::elements::Module;
+use parity_wasm::elements::{Module, Section, ExportEntry, Internal};
 
 use std::env;
 use std::path::{ PathBuf, Path };
@@ -221,8 +221,23 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
     assert!(Command::new("wasm-gc").args(&[&wasm_path, &wasm_path]).status().unwrap().success());
     let mut wasm = Vec::new();
     BufReader::new(File::open(&wasm_path)?).read_to_end(&mut wasm)?;
-    let module: Module = parity_wasm::deserialize_buffer(wasm.clone()).unwrap();
-
+    let mut module: Module = parity_wasm::deserialize_buffer(wasm.clone()).unwrap();
+    // modify the module to export the function table
+    if module.table_section().is_some() {
+        let sections = module.sections_mut();
+        for section in sections {
+            match *section {
+                Section::Export(ref mut exports) => {
+                    exports.entries_mut().push(ExportEntry::new("__table".to_string(), Internal::Table(0)));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+    parity_wasm::serialize_to_file(&wasm_path, module.clone()).unwrap();
+    wasm.clear();
+    BufReader::new(File::open(&wasm_path)?).read_to_end(&mut wasm)?;
     let mut imports = String::new();
     if let Some(import_section) = module.import_section() {
         for entry in import_section.entries() {
