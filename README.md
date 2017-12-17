@@ -40,12 +40,12 @@ repository.
 
 ```toml
 [dependencies]
-embed_js = "^0.1.1"
+embed_js = "^0.1.2"
 ```
 
 ```toml
 [build-dependencies]
-embed_js_build = "^0.1.1"
+embed_js_build = "^0.1.2"
 ```
 
 ## Limitations
