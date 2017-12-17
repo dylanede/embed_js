@@ -1,0 +1,19 @@
+[package]
+name = "embed_js_common"
+version = "0.1.0"
+authors = ["Dylan Ede <dylanede@googlemail.com>"]
+description = """
+Implementation detail of embed_js and embed_js_build, do not use directly.
+"""
+homepage = "https://github.com/dylanede/embed_js"
+repository = "https://github.com/dylanede/embed_js"
+readme = "../README.md"
+license = "MIT / Apache-2.0"
+keywords = ["javascript", "inline", "wasm", "js", "embed_js"]
+
+[dependencies]
+cpp_synmap = "^0.3.0"
+cpp_syn = "^0.12.0"
+quote = "^0.3.15"
+serde = "^1.0"
+serde_derive = "^1.0"

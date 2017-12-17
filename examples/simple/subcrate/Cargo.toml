@@ -1,0 +1,10 @@
+[package]
+name = "subcrate"
+version = "0.1.0"
+authors = ["Dylan Ede <dylanede@googlemail.com>"]
+
+[dependencies]
+embed_js = "^0.1"
+
+[build-dependencies]
+embed_js_build = "^0.1"

@@ -1,0 +1,18 @@
+[package]
+name = "embed_js"
+version = "0.1.0"
+authors = ["Dylan Ede <dylanede@googlemail.com>"]
+description = """
+Minimalist lightweight inline JavaScript for Rust applications targeting WebAssembly via the `wasm32-unknown-unknown` target.
+
+See also embed_js_build, the accompanying crate for use by build scripts.
+"""
+documentation = "https://docs.rs/embed_js"
+homepage = "https://github.com/dylanede/embed_js"
+repository = "https://github.com/dylanede/embed_js"
+readme = "../README.md"
+license = "MIT / Apache-2.0"
+keywords = ["javascript", "inline", "wasm", "js", "embed_js"]
+
+[dependencies]
+embed_js_derive = "^0.1"

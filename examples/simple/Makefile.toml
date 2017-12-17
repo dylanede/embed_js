@@ -1,0 +1,14 @@
+[tasks.build]
+command = "cargo"
+args = ["build", "--target=wasm32-unknown-unknown", "--release"]
+#args = ["rustc", "--target=wasm32-unknown-unknown", "--", "-C", "link-args=-Wl,-export-dynamic"]
+
+[tasks.format]
+disabled = true
+
+[tasks.test]
+disabled = true
+
+[tasks.post-build]
+command = "cargo"
+args = ["script", "post_build.rs"]
