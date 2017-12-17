@@ -1,5 +1,6 @@
 [workspace]
-members = ["embed_js", "embed_js_common", "embed_js_build", "embed_js_derive", "examples/simple", "examples/simple/subcrate"]
+members = ["embed_js", "embed_js_common", "embed_js_build", "embed_js_derive", "examples/simple", "examples/simple/subcrate", "examples/strings"]
+#default-members = ["embed_js", "embed_js_common", "embed_js_build", "embed_js_derive"]
 
 [patch.crates-io]
 embed_js = { path = "embed_js" }
