@@ -26,7 +26,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
-use embed_js_common::JsMac;
+use embed_js_common::{ JsMac, JsMacArg };
 
 /// Call this once from a build script for a crate that uses `embed_js` directly.
 ///
@@ -218,12 +218,27 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
     }
 
     let wasm_path = bin_prefix.with_extension("wasm");
-    assert!(Command::new("wasm-gc").args(&[&wasm_path, &wasm_path]).status().unwrap().success());
+    match Command::new("wasm-gc").args(&[&wasm_path, &wasm_path]).output() {
+        Ok(output) => {
+            if !output.status.success() {
+                panic!("wasm-gc encountered an error.\n\nstatus: {}\n\nstdout:\n\n{}\n\nstderr:\n\n{}",
+                       output.status,
+                       String::from_utf8(output.stdout).unwrap_or_else(|_| String::from("<error decoding stdout>")),
+                       String::from_utf8(output.stderr).unwrap_or_else(|_| String::from("<error decoding stderr>")))
+            }
+        }
+        Err(e) => panic!("Error attempting to run wasm-gc. Have you got it installed? Error message: {}", e)
+    }
     let mut wasm = Vec::new();
     BufReader::new(File::open(&wasm_path)?).read_to_end(&mut wasm)?;
     let mut module: Module = parity_wasm::deserialize_buffer(wasm.clone()).unwrap();
     // modify the module to export the function table
-    if module.table_section().is_some() {
+    let has_table_export = module.export_section()
+        .map(|exports| exports.entries()
+            .iter()
+            .any(|entry| entry.field() == "__table"))
+        .unwrap_or(false);
+    if !has_table_export && module.table_section().is_some() {
         let sections = module.sections_mut();
         for section in sections {
             match *section {
@@ -248,13 +263,16 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
                     }
                     imports.push_str(&format!("{}:function(", entry.field()));
                     let mut start = true;
-                    for (name, _) in mac.args {
+                    for arg in mac.args {
                         if !start {
                             imports.push_str(", ");
                         } else {
                             start = false;
                         }
-                        imports.push_str(&name);
+                        match arg {
+                            JsMacArg::Ref(_, _, name) |
+                            JsMacArg::Primitive(_, name, _) => imports.push_str(&name)
+                        }
                     }
                     if let Some(body) = mac.body {
                         imports.push_str(&format!("){{{}}}", body));

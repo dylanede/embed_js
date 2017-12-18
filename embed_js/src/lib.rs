@@ -47,14 +47,22 @@ macro_rules! embed_js_preamble {
 ///
 /// There are three forms for calling this macro:
 ///
-/// * `js!([arg1 as type1, arg2 as type2, ...] -> ret_type { /*javascript*/ })`
+/// * `js!([arg1 as type1, arg2 as type2, &arg3, *arg3 as type3, &mut **arg3, ...] -> ret_type { /*javascript*/ })`
 ///
-///   In this form, you specify arguments and a return type. Every argument must have a type
-///   attached to it via `as`. Each argument is cast to this type before being passed to the
-///   javascript. Every type specified, including the return type, must be one of `i32`, `i64`,
+///   In this form, you specify arguments and a return type. There are two categories of argument.
+///
+///   Arguments preceded by a `&` are references. These arguments may be any number of reference
+///   operations (both immutable and mutable) on an identifier that has been dereferenced via `*`
+///   some number of times (including zero). These arguments are passed to the JavaScript as pointers,
+///   with type wasm type `i32`. These pointers can then be looked up in the wasm module memory buffer
+///   to access the contents of the value referenced.
+///
+///   Other arguments take the form of a possibly dereferenced identifier followed by `as type`,
+///   for some type `type`. Values are cast using `as` to this type before passing to the JavaScript.
+///
+///   Every type specified, including the return type, must be one of `i32`, `i64`,
 ///   `f32` or `f64`. These are the only raw types supported by WebAssembly for interop at the
-///   moment. More complicated types can be passed by using integers to index into memory in the
-///   WebAssembly module.
+///   moment. More complicated types are best passed by reference.
 ///
 ///   Examples:
 ///
@@ -82,13 +90,13 @@ macro_rules! embed_js_preamble {
 ///   No arguments or return type.
 #[macro_export]
 macro_rules! js {
-    ([$($name:ident as $t:ident),*$(,)*] $($tt:tt)*) => {{
+    ([$($args:tt)*] $($tt:tt)*) => {{
         #[derive(EmbedJsDetail)]
         #[allow(dead_code)]
         enum EmbedJsStruct {
-            Input = (stringify!([$($name as $t),*] $($tt)*), 0).1
+            Input = (stringify!([$($args)*] $($tt)*), 0).1
         }
-        EmbedJsStruct::call($($name as $t),*)
+        EmbedJsStruct::call($($args)*)
     }};
     ({$($tt:tt)*}) => {{
         #[derive(EmbedJsDetail)]
@@ -97,7 +105,7 @@ macro_rules! js {
             Input = (stringify!({$($tt)*}), 0).1
         }
         EmbedJsStruct::call()
-    }}
+    }};
 }
 
 /// Used to specify JavaScript that should be executed before the WebAssembly module is loaded.

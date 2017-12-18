@@ -9,7 +9,7 @@ extern crate serde_derive;
 use std::borrow::Cow;
 
 use cpp_synmap::SourceMap;
-use cpp_syn::{TokenTree, Delimited, DelimToken, Token, Span};
+use cpp_syn::{TokenTree, Delimited, DelimToken, Token, Span, BinOpToken};
 
 use std::iter::Peekable;
 
@@ -40,26 +40,39 @@ fn parse_wasm_primitive_type<'a, I>(iter: &mut Peekable<I>) -> Result<WasmPrimit
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum JsMacArg<'a> {
+    Ref(Vec<bool>, usize, Cow<'a, str>),
+    Primitive(usize, Cow<'a, str>, WasmPrimitiveType)
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct JsMac<'a> {
-    pub args: Vec<(Cow<'a, str>, WasmPrimitiveType)>,
+    pub args: Vec<JsMacArg<'a>>,
     pub ret: Option<WasmPrimitiveType>,
     pub body: Option<String>,
 }
 
+enum SpanJsMacArg {
+    Ref(Vec<bool>, usize, Span),
+    Primitive(usize, Span, WasmPrimitiveType)
+}
+
 struct SpanJsMac {
-    args: Vec<(Span, WasmPrimitiveType)>,
+    args: Vec<SpanJsMacArg>,
     ret: Option<WasmPrimitiveType>,
     body: Option<String>,
 }
 
 fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
     let mut iter = tts.iter().peekable();
-    let (args, ret) = match iter.peek() {
+    let mut args;
+    let ret;
+    match iter.peek() {
         Some(&&TokenTree::Delimited(Delimited { delim, ref tts }, _)) => {
             match delim {
                 DelimToken::Bracket => {
                     iter.next(); // consume
-                    let mut args = Vec::new();
+                    args = Vec::new();
                     {
                         let mut iter = tts.iter().peekable();
                         let mut start = true;
@@ -73,33 +86,67 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
                                     _ => return Err(()),
                                 }
                             }
-                            let name = match iter.next() {
-                                Some(&TokenTree::Token(Token::Ident(_), span)) => span,
-                                None => break,
-                                _ => return Err(()),
-                            };
-                            match iter.next() {
-                                Some(&TokenTree::Token(Token::Ident(ref ident), _))
-                                if ident.as_ref() == "as" => {}
-                                _ => return Err(()),
+                            if iter.peek().is_none() {
+                                break;
                             }
-                            args.push((name, parse_wasm_primitive_type(&mut iter)?));
+                            let name;
+                            let mut derefs = 0;
+                            let mut refs = Vec::new();
+                            loop {
+                                match iter.next() {
+                                    Some(&TokenTree::Token(Token::BinOp(BinOpToken::And), _)) => {
+                                        if let Some(&&TokenTree::Token(Token::Ident(ref ident), _)) = iter.peek() {
+                                            if ident.as_ref() == "mut" {
+                                                iter.next();
+                                                refs.push(true);
+                                            } else {
+                                                refs.push(false);
+                                            }
+                                        } else {
+                                            refs.push(false);
+                                        }
+                                    }
+                                    Some(&TokenTree::Token(Token::BinOp(BinOpToken::Star), _)) => {
+                                        derefs += 1;
+                                    }
+                                    Some(&TokenTree::Token(Token::Ident(_), span)) => {
+                                        name = span;
+                                        break;
+                                    },
+                                    _ => return Err(())
+                                }
+                            }
+                            println!("Got name");
+                            if refs.len() > 0 {
+                                args.push(SpanJsMacArg::Ref(refs, derefs, name));
+                                println!("Got ref arg");
+                            } else {
+                                match iter.next() {
+                                    Some(&TokenTree::Token(Token::Ident(ref ident), _)) if ident.as_ref() == "as" => {}
+                                    _ => return Err(()),
+                                }
+                                args.push(SpanJsMacArg::Primitive(derefs, name, parse_wasm_primitive_type(&mut iter)?));
+                                println!("Got primitive arg");
+                            }
                         }
                     }
-                    let ret = if let Some(&&TokenTree::Token(Token::RArrow, _)) = iter.peek() {
+                    println!("Got args");
+                    ret = if let Some(&&TokenTree::Token(Token::RArrow, _)) = iter.peek() {
                         iter.next();
                         Some(parse_wasm_primitive_type(&mut iter)?)
                     } else {
                         None
                     };
-                    (args, ret)
                 }
-                DelimToken::Brace => (vec![], None), // no params or return,
+                DelimToken::Brace => { // no params or return,
+                    args = vec![];
+                    ret = None;
+                },
                 _ => return Err(()),
             }
         }
         _ => return Err(()),
-    };
+    }
 
     let result = match iter.next() {
         Some(&TokenTree::Delimited(Delimited {
@@ -115,6 +162,7 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
         }
         _ => return Err(()),
     };
+    println!("Done");
     match iter.peek() {
         None => Ok(result),
         Some(_) => Err(())
@@ -126,9 +174,16 @@ pub fn parse_js_mac_source_map<'a>(tts: &[TokenTree], source_map: &'a SourceMap)
     Ok(JsMac {
         args: spanned
             .args
-            .iter()
-            .map(|&(span, t)| {
-                (Cow::from(source_map.source_text(span).unwrap()), t)
+            .into_iter()
+            .map(|arg| {
+                match arg {
+                    SpanJsMacArg::Ref(refs, derefs, span) => {
+                        JsMacArg::Ref(refs, derefs, Cow::from(source_map.source_text(span).unwrap()))
+                    }
+                    SpanJsMacArg::Primitive(derefs, span, t) => {
+                        JsMacArg::Primitive(derefs, Cow::from(source_map.source_text(span).unwrap()), t)
+                    }
+                }
             })
             .collect(),
         ret: spanned.ret,
@@ -141,9 +196,16 @@ pub fn parse_js_mac_string_source<'a>(tts: &[TokenTree], string_source: &'a str)
     Ok(JsMac {
         args: spanned
             .args
-            .iter()
-            .map(|&(span, t)| {
-                (Cow::from(&string_source[span.lo..span.hi]), t)
+            .into_iter()
+            .map(|arg| {
+                match arg {
+                    SpanJsMacArg::Ref(refs, derefs, span) => {
+                        JsMacArg::Ref(refs, derefs, Cow::from(&string_source[span.lo..span.hi]))
+                    }
+                    SpanJsMacArg::Primitive(derefs, span, t) => {
+                        JsMacArg::Primitive(derefs, Cow::from(&string_source[span.lo..span.hi]), t)
+                    }
+                }
             })
             .collect(),
         ret: spanned.ret,

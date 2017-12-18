@@ -6,7 +6,7 @@ extern crate embed_js_common;
 use cpp_syn::{ TokenTree, Ident };
 
 use proc_macro::TokenStream;
-use embed_js_common::WasmPrimitiveType;
+use embed_js_common::{ WasmPrimitiveType, JsMacArg };
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -35,11 +35,51 @@ pub fn embed_js(input: TokenStream) -> TokenStream {
     let mut hasher = DefaultHasher::new();
     js_mac.hash(&mut hasher);
     let mac_hash = hasher.finish();
-    let (arg_names, arg_types): (Vec<_>, Vec<_>) = js_mac.args.into_iter()
-        .map(|(name, ty)| {
-            (Ident::from(name), prim_to_ty(ty))
-        })
-        .unzip();
+    let mut type_params = Vec::new();
+    let mut arg_names = Vec::new();
+    let mut arg_types = Vec::new();
+    let mut extern_arg_types = Vec::new();
+    let mut cast_fragments = Vec::new();
+    let mut next_type_param = 0;
+    for arg in js_mac.args {
+        match arg {
+            JsMacArg::Primitive(_, name, ty) => {
+                arg_names.push(Ident::from(name));
+                let ty = prim_to_ty(ty);
+                let ty_ = ty.clone();
+                extern_arg_types.push(quote!(#ty_));
+                cast_fragments.push(quote!());
+                arg_types.push(quote!(#ty));
+            }
+            JsMacArg::Ref(refs, _, name) => {
+                let mutable = refs[0];
+                let mutability = if mutable {
+                    quote!(mut)
+                } else {
+                    quote!()
+                };
+                arg_names.push(Ident::from(name));
+                let type_param = Ident::from(format!("T{}", next_type_param));
+                {
+                    let type_param_ = &type_param;
+                    next_type_param += 1;
+                    extern_arg_types.push(quote!(*mut u8));
+                    arg_types.push(quote!(& #mutability #type_param_));
+                    if mutable {
+                        cast_fragments.push(quote!(as *mut #type_param_ as *mut u8));
+                    } else {
+                        cast_fragments.push(quote!(as *const #type_param_ as *const u8 as *mut u8));
+                    }
+                }
+                type_params.push(type_param);
+            }
+        }
+    }
+    let type_params = if type_params.len() == 0 {
+        quote!()
+    } else {
+        quote!(<#(#type_params),*>)
+    };
     let arg_names = &arg_names;
     let arg_types = &arg_types;
     let extern_name = Ident::from(format!("__embed_js__{:x}", mac_hash));
@@ -48,11 +88,11 @@ pub fn embed_js(input: TokenStream) -> TokenStream {
             let ty = prim_to_ty(ty);
             quote! {
                 impl EmbedJsStruct {
-                    fn call(#(#arg_names: #arg_types),*) -> #ty {
+                    fn call #type_params(#(#arg_names: #arg_types),*) -> #ty {
                         extern {
-                            fn #extern_name(#(#arg_names: #arg_types),*) -> #ty;
+                            fn #extern_name(#(#arg_names: #extern_arg_types),*) -> #ty;
                         }
-                        unsafe { #extern_name(#(#arg_names),*) }
+                        unsafe { #extern_name(#(#arg_names #cast_fragments),*) }
                     }
                 }
             }
@@ -60,11 +100,11 @@ pub fn embed_js(input: TokenStream) -> TokenStream {
         None => {
             quote! {
                 impl EmbedJsStruct {
-                    fn call(#(#arg_names: #arg_types),*) {
+                    fn call #type_params(#(#arg_names: #arg_types),*) {
                         extern {
-                            fn #extern_name(#(#arg_names: #arg_types),*);
+                            fn #extern_name(#(#arg_names: #extern_arg_types),*);
                         }
-                        unsafe { #extern_name(#(#arg_names),*) }
+                        unsafe { #extern_name(#(#arg_names #cast_fragments),*) }
                     }
                 }
             }
