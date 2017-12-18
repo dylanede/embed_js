@@ -14,8 +14,8 @@ wasm32-unknown-unknown target installed.
 
 #### Setting up the examples
 
-The examples require both [cargo-make](https://github.com/sagiegurari/cargo-make) and
-[cargo-script](https://github.com/DanielKeep/cargo-script) to be installed.
+The examples require [cargo-make](https://github.com/sagiegurari/cargo-make),
+[cargo-script](https://github.com/DanielKeep/cargo-script) and [wasm-gc](https://github.com/alexcrichton/wasm-gc) to be installed.
 
 In an example's directory, make sure you have rustup set up to build with nightly Rust.
 
