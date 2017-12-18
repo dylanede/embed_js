@@ -22,7 +22,12 @@ pub fn free(ptr: *mut u8, len: i32) {
 #[no_mangle]
 pub fn realloc(ptr: *mut u8, old_len: i32, new_len: i32) -> *mut u8 {
     let mut v = unsafe{Vec::from_raw_parts(ptr, 0, old_len as usize)};
-    v.reserve_exact(new_len as usize);
+    if new_len > old_len {
+        v.reserve_exact((new_len - old_len) as usize);
+    } else {
+        unsafe { v.set_len(new_len as usize) }
+        v.shrink_to_fit();
+    }
     let ptr = v.as_mut_ptr();
     mem::forget(v);
     ptr
@@ -55,6 +60,7 @@ pub fn entry_point() {
             // allocate a Vec<u8>
             var ptr = wasm_exports.alloc(array.length);
             var rust_array = new Uint8Array(wasm_mem.buffer, ptr, array.length);
+            // copy array
             rust_array.set(array);
             // writing into a *mut u32
             var rust_len = new Uint32Array(wasm_mem.buffer, l_ptr, 1);
