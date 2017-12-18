@@ -1,6 +1,6 @@
 [package]
 name = "embed_js_common"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Dylan Ede <dylanede@googlemail.com>"]
 description = """
 Implementation detail of embed_js and embed_js_build, do not use directly.

@@ -1,6 +1,6 @@
 [package]
 name = "embed_js_derive"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Dylan Ede <dylanede@googlemail.com>"]
 description = """
 Implementation detail of embed_js and embed_js_build, do not use directly.
@@ -15,6 +15,6 @@ keywords = ["javascript", "inline", "wasm", "js", "embed_js"]
 proc-macro = true
 
 [dependencies]
-embed_js_common = "^0.1"
+embed_js_common = "^0.2"
 cpp_syn = { version = "^0.12.0", features = ["full", "parsing"] }
 quote = "^0.3.15"
