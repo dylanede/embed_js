@@ -1,7 +1,7 @@
 //! ```cargo
 //! [dependencies]
 //! base64 = "0.8.0"
-//! embed_js_build = "^0.1.2"
+//! embed_js_build = "^0.1.3"
 //! ```
 
 extern crate base64;

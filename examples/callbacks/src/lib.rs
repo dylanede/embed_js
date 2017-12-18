@@ -3,8 +3,8 @@ extern crate embed_js;
 
 embed_js_preamble!();
 
-// This macro call sets up some variables before the module is used. They are referred to by
-// the inline JS.
+// Some convenience JS for dealing with interop more easily. This sort of stuff should go in a
+// higher level crate.
 include_js! {
     window.refs = new Map();
     window.next_ref_id = 0;
@@ -17,6 +17,50 @@ include_js! {
     window.drop_ref = function(id) {
         refs.delete(id);
     };
+    window.get_closure = function(ptr) {
+        var array = new Int32Array(wasm_mem.buffer, ptr, 3);
+        var f = wasm_table.get(array[0]);
+        var data = array[1];
+        var drop = array[2];
+        var result = function() { f(data); };
+        result.drop = drop;
+        return result;
+    }
+}
+
+// MarshalledClosure makes closure interop easier
+#[repr(C)]
+struct MarshalledClosure {
+    call: extern fn(*mut ()),
+    data: *mut (),
+    drop: extern fn(*mut ())
+}
+
+impl MarshalledClosure {
+    unsafe fn drop(self) {
+        (self.drop)(self.data);
+    }
+}
+
+unsafe fn marshal_closure<F>(f: F) -> MarshalledClosure
+    where F : FnMut()
+{
+    extern fn call<F>(ptr: *mut ()) where F : FnMut() {
+        let f = unsafe { &mut *(ptr as *mut F) };
+        f();
+    }
+    extern fn drop_f<F>(ptr: *mut ()) {
+        let f = unsafe { Box::from_raw(ptr as *mut F) };
+        drop(f)
+    }
+    let mut bf = Box::new(f);
+    let ptr = &mut *bf as *mut F as *mut ();
+    std::mem::forget(bf);
+    MarshalledClosure {
+        call: call::<F>,
+        data: ptr,
+        drop: drop_f::<F>
+    }
 }
 
 #[no_mangle]
@@ -29,20 +73,33 @@ pub fn entry_point() {
         return new_ref(button);
     });
 
-    // The rust function to call from the event handler
-    extern fn my_callback() {
-        js!({
-            alert("You clicked the button!");
-        });
-    }
-
+    // demonstration of a closure with internal state
+    let my_callback = {
+        let mut clicked_before = false; // this ends up owned by the closure
+        move || {
+            if !clicked_before {
+                js!({
+                    alert("You clicked the button!");
+                });
+                clicked_before = true;
+            } else {
+                js!({
+                    alert("You clicked the button again!");
+                })
+            }
+        }
+    };
+    // Closure marshalling:
+    // You must ensure that the lifetime bounds of the closure are respected
+    // In this case the closure lives for the lifetime of the page (and its bounds allow that),
+    // so we don't drop it - if we did we would call c.drop()
+    let c = unsafe { marshal_closure(my_callback) };
     // register the event handler
-    // all Rust function pointers can be turned into references to wasm functions by looking them up
-    // in the __table export of the module, here exposed as wasm_table (see the post build script
-    // for how to do this)
-    js!([button_id as i32, my_callback as i32] {
+    js!([button_id as i32, &c] {
+        var closure = get_closure(c);
         refs[button_id].addEventListener("click", function() {
-            wasm_table.get(my_callback)();
+            closure();
+            // if we wanted to drop the closure, we would call closure.drop()
         });
     });
 
