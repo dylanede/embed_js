@@ -50,7 +50,7 @@ pub fn entry_point() {
         let l_ptr = &mut l as *mut _;
         let p = js!([l_ptr as i32] -> i32 {
             var js_string = "Hello Rust!";
-            // TextDecoder doesn't support decoding into an existing buffer yet :(
+            // TextEncoder doesn't support encoding into an existing buffer yet :(
             var array = (new TextEncoder("utf-8")).encode(js_string);
             // allocate a Vec<u8>
             var ptr = wasm_exports.alloc(array.length);
