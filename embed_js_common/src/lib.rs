@@ -116,21 +116,17 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
                                     _ => return Err(())
                                 }
                             }
-                            println!("Got name");
                             if refs.len() > 0 {
                                 args.push(SpanJsMacArg::Ref(refs, derefs, name));
-                                println!("Got ref arg");
                             } else {
                                 match iter.next() {
                                     Some(&TokenTree::Token(Token::Ident(ref ident), _)) if ident.as_ref() == "as" => {}
                                     _ => return Err(()),
                                 }
                                 args.push(SpanJsMacArg::Primitive(derefs, name, parse_wasm_primitive_type(&mut iter)?));
-                                println!("Got primitive arg");
                             }
                         }
                     }
-                    println!("Got args");
                     ret = if let Some(&&TokenTree::Token(Token::RArrow, _)) = iter.peek() {
                         iter.next();
                         Some(parse_wasm_primitive_type(&mut iter)?)
@@ -162,7 +158,6 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
         }
         _ => return Err(()),
     };
-    println!("Done");
     match iter.peek() {
         None => Ok(result),
         Some(_) => Err(())
