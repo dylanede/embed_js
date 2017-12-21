@@ -23,7 +23,7 @@ include_js! {
         var data = array[1];
         var drop = array[2];
         var result = function() { f(data); };
-        result.drop = drop;
+        result.drop = function() { drop(data); };
         return result;
     }
 }
