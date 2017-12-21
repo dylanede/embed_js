@@ -28,6 +28,115 @@ use std::collections::HashMap;
 
 use embed_js_common::{ JsMac, JsMacArg };
 
+struct JsVisitor<'a> {
+    source_map: &'a mut SourceMap,
+    instances: &'a mut Vec<JsMac>,
+    included_js: &'a mut String
+}
+impl<'a> Visitor for JsVisitor<'a> {
+    fn visit_mac(&mut self, mac: &Mac) {
+        if mac.path.segments.len() != 1 {
+            return;
+        }
+        let tts = match mac.tts[0] {
+            TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
+            _ => return,
+        };
+        match mac.path.segments[0].ident.as_ref() {
+            "js" => {
+                if let Ok(parsed) = embed_js_common::parse_js_mac_source_map(tts, self.source_map) {
+                    self.instances.push(parsed);
+                }
+            }
+            "include_js" => {
+                let js_source = if let (Some(first), Some(last)) = (tts.first(), tts.last()) {
+                    self.source_map.source_text(first.span().extend(last.span())).unwrap()
+                } else {
+                    ""
+                };
+                self.included_js.push_str(&js_source);
+                self.included_js.push_str("\n");
+            }
+            "include" => {
+                use cpp_syn::{ Token, Lit, LitKind };
+                let mut iter = tts.iter().peekable();
+                match iter.next() {
+                    Some(&TokenTree::Token(Token::Literal(Lit { node: LitKind::Str(ref path, _), .. }), span)) => {
+                        if iter.next().is_some() {
+                            return;
+                        }
+                        let mut path = PathBuf::from(path);
+                        if !path.is_absolute() {
+                            let root = self.source_map.filename(span).unwrap();
+                            path = root.join(path);
+                        }
+                        println!("cargo:warning=embed_js_build processing source in included file {}", path.display());
+                        let krate = self.source_map.add_crate_root(path).unwrap();
+                        self.visit_crate(&krate);
+                    }
+                    Some(&TokenTree::Token(Token::Ident(ref ident), span)) if ident.as_ref() == "concat" => {
+                        match iter.next() {
+                            Some(&TokenTree::Token(Token::Not, _)) => {}
+                            _ => return
+                        }
+                        let tts = match iter.next() {
+                            Some(&TokenTree::Delimited(Delimited { ref tts, .. }, _)) => {
+                                tts
+                            }
+                            _ => return
+                        };
+                        let mut path = String::new();
+                        let mut iter = tts.iter().peekable();
+                        while let Some(t) = iter.next() {
+                            match *t {
+                                TokenTree::Token(Token::Literal(Lit { node: LitKind::Str(ref s, _), .. }), _) => {
+                                    path.push_str(s);
+                                }
+                                TokenTree::Token(Token::Comma, _) => {}
+                                TokenTree::Token(Token::Ident(ref ident), _) if ident.as_ref() == "env" => {
+                                    match iter.next() {
+                                        Some(&TokenTree::Token(Token::Not, _)) => {}
+                                        _ => return
+                                    }
+                                    let tts = match iter.next() {
+                                        Some(&TokenTree::Delimited(Delimited { ref tts, .. }, _)) => {
+                                            tts
+                                        }
+                                        _ => return
+                                    };
+                                    if let Some(&TokenTree::Token(Token::Literal(Lit { node: LitKind::Str(ref s, _), .. }), _)) = tts.first() {
+                                        if tts.len() != 1 {
+                                            return
+                                        }
+                                        if let Ok(v) = std::env::var(s) {
+                                            path.push_str(&v);
+                                        } else {
+                                            return
+                                        }
+                                    } else {
+                                        return
+                                    }
+                                }
+                                _ => return
+                            }
+                        }
+                        let mut path = PathBuf::from(path);
+                        if !path.is_absolute() {
+                            let root = self.source_map.filename(span).unwrap();
+                            path = root.join(path);
+                        }
+                        println!("cargo:warning=embed_js_build processing source in included file {}", path.display());
+                        let krate = self.source_map.add_crate_root(path).unwrap();
+                        self.visit_crate(&krate);
+                    }
+                    _ => return
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Call this once from a build script for a crate that uses `embed_js` directly.
 ///
 /// Parameters:
@@ -47,51 +156,11 @@ use embed_js_common::{ JsMac, JsMacArg };
 pub fn preprocess_crate(lib_root: &Path) {
     let mut source_map = SourceMap::new();
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let krate = source_map
-        .add_crate_root(lib_root) // TODO: get the true location from the Cargo.toml
-        .unwrap();
     let mut instances = Vec::new();
     let mut included_js = String::new();
-    struct JsVisitor<'a, 'b: 'a> {
-        source_map: &'b SourceMap,
-        instances: &'a mut Vec<JsMac<'b>>,
-        included_js: &'a mut String
-    }
-
-    impl<'a, 'b: 'a> Visitor for JsVisitor<'a, 'b> {
-        fn visit_mac(&mut self, mac: &Mac) {
-            if mac.path.segments.len() != 1 {
-                return;
-            }
-            match mac.path.segments[0].ident.as_ref() {
-                "js" => {
-                    let tts = match mac.tts[0] {
-                        TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
-                        _ => return,
-                    };
-                    if let Ok(parsed) = embed_js_common::parse_js_mac_source_map(tts, self.source_map) {
-                        self.instances.push(parsed);
-                    }
-                }
-                "include_js" => {
-                    let tts = match mac.tts[0] {
-                        TokenTree::Delimited(Delimited { ref tts, .. }, _) => &**tts,
-                        _ => return,
-                    };
-                    let js_source = if let (Some(first), Some(last)) = (tts.first(), tts.last()) {
-                        self.source_map.source_text(first.span().extend(last.span())).unwrap()
-                    } else {
-                        ""
-                    };
-                    self.included_js.push_str(&js_source);
-                    self.included_js.push_str("\n");
-                }
-                _ => {}
-            }
-        }
-    }
+    let krate = source_map.add_crate_root(lib_root).unwrap();
     JsVisitor {
-        source_map: &source_map,
+        source_map: &mut source_map,
         instances: &mut instances,
         included_js: &mut included_js
     }.visit_crate(&krate);
@@ -195,7 +264,7 @@ pub fn postprocess_crate(lib_name: &str, debug: bool) -> std::io::Result<PostPro
         }
     }
     d_pieces.remove(0); // remove lib path
-    let mut js_macs: HashMap<String, JsMac<'static>> = HashMap::new();
+    let mut js_macs: HashMap<String, JsMac> = HashMap::new();
     let mut included_js = String::new();
     for path in d_pieces {
         if path.ends_with("out/embed_js_preamble.rs") || path.ends_with("out\\embed_js_preamble.rs") {

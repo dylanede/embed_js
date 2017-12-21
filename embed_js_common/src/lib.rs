@@ -6,8 +6,6 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use std::borrow::Cow;
-
 use cpp_synmap::SourceMap;
 use cpp_syn::{TokenTree, Delimited, DelimToken, Token, Span, BinOpToken};
 
@@ -40,14 +38,14 @@ fn parse_wasm_primitive_type<'a, I>(iter: &mut Peekable<I>) -> Result<WasmPrimit
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum JsMacArg<'a> {
-    Ref(Vec<bool>, usize, Cow<'a, str>),
-    Primitive(usize, Cow<'a, str>, WasmPrimitiveType)
+pub enum JsMacArg {
+    Ref(Vec<bool>, usize, String),
+    Primitive(usize, String, WasmPrimitiveType)
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct JsMac<'a> {
-    pub args: Vec<JsMacArg<'a>>,
+pub struct JsMac {
+    pub args: Vec<JsMacArg>,
     pub ret: Option<WasmPrimitiveType>,
     pub body: Option<String>,
 }
@@ -164,7 +162,7 @@ fn parse_js_mac_span(tts: &[TokenTree]) -> Result<SpanJsMac, ()> {
     }
 }
 
-pub fn parse_js_mac_source_map<'a>(tts: &[TokenTree], source_map: &'a SourceMap) -> Result<JsMac<'a>, ()> {
+pub fn parse_js_mac_source_map(tts: &[TokenTree], source_map: &SourceMap) -> Result<JsMac, ()> {
     let spanned = parse_js_mac_span(tts)?;
     Ok(JsMac {
         args: spanned
@@ -173,10 +171,10 @@ pub fn parse_js_mac_source_map<'a>(tts: &[TokenTree], source_map: &'a SourceMap)
             .map(|arg| {
                 match arg {
                     SpanJsMacArg::Ref(refs, derefs, span) => {
-                        JsMacArg::Ref(refs, derefs, Cow::from(source_map.source_text(span).unwrap()))
+                        JsMacArg::Ref(refs, derefs, source_map.source_text(span).unwrap().to_string())
                     }
                     SpanJsMacArg::Primitive(derefs, span, t) => {
-                        JsMacArg::Primitive(derefs, Cow::from(source_map.source_text(span).unwrap()), t)
+                        JsMacArg::Primitive(derefs, source_map.source_text(span).unwrap().to_string(), t)
                     }
                 }
             })
@@ -186,7 +184,7 @@ pub fn parse_js_mac_source_map<'a>(tts: &[TokenTree], source_map: &'a SourceMap)
     })
 }
 
-pub fn parse_js_mac_string_source<'a>(tts: &[TokenTree], string_source: &'a str) -> Result<JsMac<'a>, ()> {
+pub fn parse_js_mac_string_source(tts: &[TokenTree], string_source: &str) -> Result<JsMac, ()> {
     let spanned = parse_js_mac_span(tts)?;
     Ok(JsMac {
         args: spanned
@@ -195,10 +193,10 @@ pub fn parse_js_mac_string_source<'a>(tts: &[TokenTree], string_source: &'a str)
             .map(|arg| {
                 match arg {
                     SpanJsMacArg::Ref(refs, derefs, span) => {
-                        JsMacArg::Ref(refs, derefs, Cow::from(&string_source[span.lo..span.hi]))
+                        JsMacArg::Ref(refs, derefs, string_source[span.lo..span.hi].to_string())
                     }
                     SpanJsMacArg::Primitive(derefs, span, t) => {
-                        JsMacArg::Primitive(derefs, Cow::from(&string_source[span.lo..span.hi]), t)
+                        JsMacArg::Primitive(derefs, string_source[span.lo..span.hi].to_string(), t)
                     }
                 }
             })
