@@ -40,17 +40,18 @@ repository.
 
 ```toml
 [dependencies]
-embed_js = "^0.1.3"
+embed_js = "^0.1.4"
 ```
 
 ```toml
 [build-dependencies]
-embed_js_build = "^0.1.3"
+embed_js_build = "^0.1.4"
 ```
 
 ## Limitations
 
-Currently the `js` macro cannot be used inside other macros. This is potentially fixable in the future.
+Currently the `js` macro cannot be used inside other macros, with the exception of the `include!` macro.
+This is potentially fixable in the future.
 
 ## License
 
